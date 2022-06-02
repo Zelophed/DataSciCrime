@@ -21,13 +21,12 @@ object Setup {
 			.option("encoding", "windows-1252")
 			.csv("ZR-F-01-T01-Faelle_csv.csv")
 
-		case class Case2(key: String, crime: String, year: Int, amount: Int, attempts: Int, clearanceRate: Float)
-		case class Suspects2(key: String, crime: String, year: Int, amount: Int, sUnder6: Int, s6to8: Int, s8to10: Int, s10to12: Int, s12to14: Int, s14to16: Int, s16to18: Int, s18to21: Int, s21to23: Int, s23to25: Int, s25to30: Int, s30to40: Int, s40to50: Int, s50to60: Int, s60plus: Int)
-
 		val t01 = dfT01.rdd
 
 		val keyFixer = udf((key: String) => {
-			if (key.contains("E+")) {
+			if (key.length < 6) {
+				key.toInt.formatted("%06d")
+			} else if (key.contains("E+")) {
 				key.replace(".00E+", "**")
 			} else key
 		})
@@ -75,6 +74,7 @@ object Setup {
 
 		val tCombined = t01mapped
 			.join(t20mapped)
+			.filter(entry => entry._1._2 >= 1993)
 			.sortByKey()
 
 
@@ -88,7 +88,8 @@ object Setup {
 			.collect()
 
 
-		def allYears = (1987 to 2021).toList
+		//def allYears = (1987 to 2021).toList
+		def allYears = (1993 to 2021).toList
 
 		println("entries with all years: " + results
 			.filterNot(entry => entry._1.contains("*"))
@@ -97,7 +98,7 @@ object Setup {
 
 		//---
 
-		val jdbcUrl = "jdbc:mysql://192.168.178.98:5001/v2"
+		val jdbcUrl = "jdbc:mysql://192.168.178.98:5001/v3"
 		//val jdbcUrl = "jdbc:mysql://127.0.0.1:5001/v2"
 		val connProperties = new Properties()
 		connProperties.put("user", "root")
