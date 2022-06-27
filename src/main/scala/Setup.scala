@@ -1,3 +1,4 @@
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{SQLContext, SaveMode}
 import org.apache.spark.{SparkConf, SparkContext}
@@ -6,11 +7,34 @@ import java.util.Properties
 
 object Setup {
 
+	val sc = SparkContext.getOrCreate(new SparkConf().setMaster("local[*]").setAppName("Application"))
+	sc.setLogLevel("WARN")
+	val sql = new SQLContext(sc)
+
+	var keyNameLUT: Map[String, String] = _
+	var results: Array[(String, List[Combined])] = _
+	var tCombinedFiltered: RDD[(String, List[Combined])] = _
+	var tCombinedUnfiltered: RDD[(String, List[Combined])] = _
+
+
 	def main(args: Array[String]): Unit = {
 
-		val sc = SparkContext.getOrCreate(new SparkConf().setMaster("local[*]").setAppName("Application"))
-		val sql = new SQLContext(sc)
+		init()
 
+		//saveToDatabase()
+
+
+		/*results
+			.filterNot(entry => entry._1.contains("*"))
+			.filter(entry => entry._2.map(_.year) == allYears)
+			.map(entry => (entry._1, keyNameLUT(entry._1)))
+			.sortBy(_._1)
+			.foreach(println)
+*/
+
+	}
+
+	def init(): Unit = {
 		import sql.implicits._
 
 		val dfT01 = sql
@@ -44,7 +68,7 @@ object Setup {
 
 		//dfT20.printSchema()
 		//look up table from key to human name
-		val keyNameLUT = t01
+		keyNameLUT = t01
 			.groupBy(row => row.getString(0))
 			.mapValues(rows => rows.maxBy(_.getInt(2)).getString(1))
 			.collect()
@@ -62,7 +86,7 @@ object Setup {
 			.collect()
 			.sortBy(identity)
 
-		println("keys in both: " + keys.length)
+		//println("keys in both: " + keys.length)
 
 		//		println("both keys")
 		//		both
@@ -74,7 +98,7 @@ object Setup {
 
 		val tCombined = t01mapped
 			.join(t20mapped)
-			.filter(entry => entry._1._2 >= 1993)
+			//.filter(entry => entry._1._2 >= 1993)
 			.sortByKey()
 
 
@@ -82,18 +106,28 @@ object Setup {
 			.take(20)
 			.foreach(println)
 
-		val results = tCombined
+		results = tCombined
 			.groupBy(row => row._1._1)
 			.mapValues(entries => entries.map(entry => Combined.fromSingles(entry._2._1, entry._2._2)).toList)
+			.filter(entry => !entry._1.contains("*"))
+			.filter(entry => entry._2.map(_.year) == allYears)
 			.collect()
-
 
 		//def allYears = (1987 to 2021).toList
 		def allYears = (1993 to 2021).toList
 
-		println("entries with all years: " + results
-			.filterNot(entry => entry._1.contains("*"))
-			.count(entry => entry._2.map(_.year) == allYears))
+		tCombinedUnfiltered = tCombined
+			.groupBy(row => row._1._1)
+			.mapValues(entries => entries.map(entry => Combined.fromSingles(entry._2._1, entry._2._2)).toList)
+
+		tCombinedFiltered = tCombinedUnfiltered
+			.filter(!_._1.contains("*"))
+			.filter(entry => entry._2.map(_.year) == allYears)
+	}
+
+	def saveToDatabase(): Unit = {
+
+		println("entries with all years: " + results.length)
 
 
 		//---
@@ -109,8 +143,6 @@ object Setup {
 
 		results
 			//.slice(0, results.length/4)
-			.filterNot(entry => entry._1.contains("*"))
-			.filter(entry => entry._2.map(_.year) == allYears)
 			.foreach(tuple => {
 				sql
 					.createDataFrame(tuple._2)
@@ -119,15 +151,6 @@ object Setup {
 					.mode(SaveMode.Overwrite)
 					.jdbc(jdbcUrl, s"`${tuple._1}`", connProperties)
 			})
-
-
-		results
-			.filterNot(entry => entry._1.contains("*"))
-			.filter(entry => entry._2.map(_.year) == allYears)
-			.map(entry => (entry._1, keyNameLUT(entry._1)))
-			.sortBy(_._1)
-			.foreach(println)
-
 
 	}
 
